@@ -122,7 +122,13 @@ namespace dnSpy.Analyzer.TreeNodes {
 							implMapName == GetDllImportMethodName(md, otherImplMap) &&
 							StringComparer.OrdinalIgnoreCase.Equals(implMapModule, NormalizeModuleName(otherImplMap.Module?.Name))) {
 							foundInstr = instr;
-							break;
+							// Bug fix with dup code
+							if (GetOriginalCodeLocation(method) is MethodDef codeLocation && !HasAlreadyBeenFound(codeLocation)) {
+								var node = new MethodNode(codeLocation) { Context = Context };
+								if (codeLocation == method)
+									node.SourceRef = new SourceRef(method, foundInstr.Offset, foundInstr.Operand as IMDTokenProvider);
+								yield return node;
+							}
 						}
 					}
 				}
@@ -132,11 +138,17 @@ namespace dnSpy.Analyzer.TreeNodes {
 							Helpers.IsReferencedBy(analyzedMethod.DeclaringType, mr.DeclaringType) &&
 							CheckEquals(mr.ResolveMethodDef(), analyzedMethod)) {
 							foundInstr = instr;
-							break;
+							// Bug fix with dup code
+							if (GetOriginalCodeLocation(method) is MethodDef codeLocation && !HasAlreadyBeenFound(codeLocation)) {
+								var node = new MethodNode(codeLocation) { Context = Context };
+								if (codeLocation == method)
+									node.SourceRef = new SourceRef(method, foundInstr.Offset, foundInstr.Operand as IMDTokenProvider);
+								yield return node;
+							}
 						}
 					}
 				}
-
+				/*
 				if (foundInstr is not null) {
 					if (GetOriginalCodeLocation(method) is MethodDef codeLocation && !HasAlreadyBeenFound(codeLocation)) {
 						var node = new MethodNode(codeLocation) { Context = Context };
@@ -145,6 +157,7 @@ namespace dnSpy.Analyzer.TreeNodes {
 						yield return node;
 					}
 				}
+				*/
 			}
 
 			if (property is not null) {
