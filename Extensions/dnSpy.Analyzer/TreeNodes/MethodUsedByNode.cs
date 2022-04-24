@@ -132,7 +132,12 @@ namespace dnSpy.Analyzer.TreeNodes {
 							Helpers.IsReferencedBy(analyzedMethod.DeclaringType, mr.DeclaringType) &&
 							CheckEquals(mr.ResolveMethodDef(), analyzedMethod)) {
 							foundInstr = instr;
-							break;
+							MethodDef codeLocation = (MethodDef)GetOriginalCodeLocation(method);
+							var node = new MethodNode(codeLocation) { Context = Context };
+							if (codeLocation == method)
+								node.SourceRef = new SourceRef(method, foundInstr.Offset, foundInstr.Operand as IMDTokenProvider);
+							yield return node;
+							foundInstr = null;
 						}
 					}
 				}
