@@ -34,7 +34,7 @@ namespace dnSpy.Analyzer.TreeNodes {
 		readonly UTF8String? implMapName;
 		readonly string? implMapModule;
 		PropertyDef? property;
-		ConcurrentDictionary<MethodDef, int>? foundMethods;
+		ConcurrentDictionary<KeyValuePair<MethodDef, uint>, int>? foundMethods;
 
 		public MethodUsedByNode(MethodDef analyzedMethod, bool isSetter) {
 			this.analyzedMethod = analyzedMethod ?? throw new ArgumentNullException(nameof(analyzedMethod));
@@ -76,7 +76,7 @@ namespace dnSpy.Analyzer.TreeNodes {
 			output.Write(BoxedTextColor.Text, dnSpy_Analyzer_Resources.UsedByTreeNode);
 
 		protected override IEnumerable<AnalyzerTreeNodeData> FetchChildren(CancellationToken ct) {
-			foundMethods = new ConcurrentDictionary<MethodDef, int>();
+			foundMethods = new ConcurrentDictionary<KeyValuePair<MethodDef, uint>, int>();
 
 			if (isSetter)
 				property = analyzedMethod.DeclaringType.Properties.FirstOrDefault(a => a.SetMethod == analyzedMethod);
@@ -122,7 +122,12 @@ namespace dnSpy.Analyzer.TreeNodes {
 							implMapName == GetDllImportMethodName(md, otherImplMap) &&
 							StringComparer.OrdinalIgnoreCase.Equals(implMapModule, NormalizeModuleName(otherImplMap.Module?.Name))) {
 							foundInstr = instr;
-							break;
+							if (GetOriginalCodeLocation(method) is MethodDef codeLocation && !HasAlreadyBeenFound(new KeyValuePair<MethodDef, uint>(codeLocation, foundInstr.Offset))) {
+								var node = new MethodNode(codeLocation) { Context = Context };
+								if (codeLocation == method)
+									node.SourceRef = new SourceRef(method, foundInstr.Offset, foundInstr.Operand as IMDTokenProvider);
+								yield return node;
+							}
 						}
 					}
 				}
@@ -132,35 +137,26 @@ namespace dnSpy.Analyzer.TreeNodes {
 							Helpers.IsReferencedBy(analyzedMethod.DeclaringType, mr.DeclaringType) &&
 							CheckEquals(mr.ResolveMethodDef(), analyzedMethod)) {
 							foundInstr = instr;
-							MethodDef codeLocation = (MethodDef)GetOriginalCodeLocation(method);
-							var node = new MethodNode(codeLocation) { Context = Context };
-							if (codeLocation == method)
-								node.SourceRef = new SourceRef(method, foundInstr.Offset, foundInstr.Operand as IMDTokenProvider);
-							yield return node;
-							foundInstr = null;
+							if (GetOriginalCodeLocation(method) is MethodDef codeLocation && !HasAlreadyBeenFound(new KeyValuePair<MethodDef, uint>(codeLocation, foundInstr.Offset))) {
+								var node = new MethodNode(codeLocation) { Context = Context };
+								if (codeLocation == method)
+									node.SourceRef = new SourceRef(method, foundInstr.Offset, foundInstr.Operand as IMDTokenProvider);
+								yield return node;
+							}
 						}
-					}
-				}
-
-				if (foundInstr is not null) {
-					if (GetOriginalCodeLocation(method) is MethodDef codeLocation && !HasAlreadyBeenFound(codeLocation)) {
-						var node = new MethodNode(codeLocation) { Context = Context };
-						if (codeLocation == method)
-							node.SourceRef = new SourceRef(method, foundInstr.Offset, foundInstr.Operand as IMDTokenProvider);
-						yield return node;
 					}
 				}
 			}
 
 			if (property is not null) {
 				foreach (var node in FieldAccessNode.CheckCustomAttributeNamedArgumentWrite(Context, type, property)) {
-					if (node is MethodNode methodNode && methodNode.Member is MethodDef method && HasAlreadyBeenFound(method))
+					if (node is MethodNode methodNode && methodNode.Member is MethodDef method && HasAlreadyBeenFound(new KeyValuePair<MethodDef, uint>(method, uint.MaxValue)))
 						continue;
 					yield return node;
 				}
 			}
 		}
 
-		bool HasAlreadyBeenFound(MethodDef method) => !foundMethods!.TryAdd(method, 0);
+		bool HasAlreadyBeenFound(KeyValuePair<MethodDef, uint> methodOffsetPair) => !foundMethods!.TryAdd(methodOffsetPair, 0);
 	}
 }
