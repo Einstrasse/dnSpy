@@ -32,7 +32,7 @@ namespace dnSpy.Analyzer.TreeNodes {
 		readonly MethodDef analyzedMethod;
 		readonly bool isSetter;
 		PropertyDef? property;
-		ConcurrentDictionary<MethodDef, int>? foundMethods;
+		ConcurrentDictionary<KeyValuePair<MethodDef, uint>, int>? foundMethods;
 		MethodDef? baseMethod;
 		Guid comGuid;
 		bool isComType;
@@ -81,7 +81,7 @@ namespace dnSpy.Analyzer.TreeNodes {
 		}
 
 		void InitializeAnalyzer() {
-			foundMethods = new ConcurrentDictionary<MethodDef, int>();
+			foundMethods = new ConcurrentDictionary<KeyValuePair<MethodDef, uint>, int>();
 
 			var baseMethods = TypesHierarchyHelpers.FindBaseMethods(analyzedMethod).ToArray();
 			if (baseMethods.Length > 0) {
@@ -113,52 +113,52 @@ namespace dnSpy.Analyzer.TreeNodes {
 							ComUtils.GetMemberInfo(md, out bool otherIsComType, out var otherComGuid, out int otherVtblIndex);
 							if (otherIsComType && comGuid == otherComGuid && vtblIndex == otherVtblIndex) {
 								foundInstr = instr;
-								break;
+								if (GetOriginalCodeLocation(method) is MethodDef codeLocation && !HasAlreadyBeenFound(new KeyValuePair<MethodDef, uint>(codeLocation, foundInstr.Offset))) {
+									var node = new MethodNode(codeLocation) { Context = Context };
+									if (codeLocation == method)
+										node.SourceRef = new SourceRef(method, foundInstr.Offset, foundInstr.Operand as IMDTokenProvider);
+									yield return node;
+								}
 							}
 						}
-					}
-
-					if (mr.Name == name) {
+					} else if (mr.Name == name) {
 						// explicit call to the requested method 
 						if (Helpers.IsReferencedBy(analyzedMethod.DeclaringType, mr.DeclaringType)
 							&& CheckEquals(md ??= mr.ResolveMethodDef(), analyzedMethod)) {
 							foundInstr = instr;
-							break;
-						}
-						// virtual call to base method
-						if (instr.OpCode.Code == Code.Callvirt || instr.OpCode.Code == Code.Ldvirtftn) {
+							if (GetOriginalCodeLocation(method) is MethodDef codeLocation && !HasAlreadyBeenFound(new KeyValuePair<MethodDef, uint>(codeLocation, foundInstr.Offset))) {
+								var node = new MethodNode(codeLocation) { Context = Context };
+								if (codeLocation == method)
+									node.SourceRef = new SourceRef(method, foundInstr.Offset, foundInstr.Operand as IMDTokenProvider);
+								yield return node;
+							}
+						} else if (instr.OpCode.Code == Code.Callvirt || instr.OpCode.Code == Code.Ldvirtftn) { // virtual call to base method
 							md ??= mr.ResolveMethodDef();
 							if (md is null) {
 								// cannot resolve the operand, so ignore this method
-								break;
-							}
-							if (CheckEquals(md, baseMethod)) {
+							} else if (CheckEquals(md, baseMethod)) {
 								foundInstr = instr;
-								break;
+								if (GetOriginalCodeLocation(method) is MethodDef codeLocation && !HasAlreadyBeenFound(new KeyValuePair<MethodDef, uint>(codeLocation, foundInstr.Offset))) {
+									var node = new MethodNode(codeLocation) { Context = Context };
+									if (codeLocation == method)
+										node.SourceRef = new SourceRef(method, foundInstr.Offset, foundInstr.Operand as IMDTokenProvider);
+									yield return node;
+								}
 							}
 						}
-					}
-				}
-
-				if (foundInstr is not null) {
-					if (GetOriginalCodeLocation(method) is MethodDef codeLocation && !HasAlreadyBeenFound(codeLocation)) {
-						var node = new MethodNode(codeLocation) { Context = Context };
-						if (codeLocation == method)
-							node.SourceRef = new SourceRef(method, foundInstr.Offset, foundInstr.Operand as IMDTokenProvider);
-						yield return node;
 					}
 				}
 			}
 
 			if (property is not null) {
 				foreach (var node in FieldAccessNode.CheckCustomAttributeNamedArgumentWrite(Context, type, property)) {
-					if (node is MethodNode methodNode && methodNode.Member is MethodDef method && HasAlreadyBeenFound(method))
+					if (node is MethodNode methodNode && methodNode.Member is MethodDef method && HasAlreadyBeenFound(new KeyValuePair<MethodDef, uint>(method, uint.MaxValue)))
 						continue;
 					yield return node;
 				}
 			}
 		}
 
-		bool HasAlreadyBeenFound(MethodDef method) => !foundMethods!.TryAdd(method, 0);
+		bool HasAlreadyBeenFound(KeyValuePair<MethodDef, uint> methodOffsetPair) => !foundMethods!.TryAdd(methodOffsetPair, 0);
 	}
 }
